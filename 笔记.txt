@@ -1,0 +1,110 @@
+1、浅谈Job和JobDetail
+	(1)、Job：
+		Job接口类似于TimerTask抽象类，Job接口只有一个execute方法，类似TimerTask的run方法，在里面编写业务逻辑代码。
+		
+		Job实例在Quartz中的生命周期
+			每次调度器执行job时，它在调用execute方法前会创建一个新的job实例。
+			当调用完成后，关联的job对象实例会被释放，释放的实例会被垃圾回收机制回收。
+			
+	(2)、JobDetail：
+		JobDetail为Job实例提供了许多设置属性，以及JobDataMap成员变量属性，它用来存储特定Job实例的状态信息，调度器需要借助JobDetail对象来添加Job实例
+		
+		主要属性：
+			name：任务的名称
+			group：任务所属的组，默认为DEFAULT
+			jobClass：任务实现类
+			jobDataMap：用来传参
+		
+2、浅谈JobExecutionContext
+	(1)、当Scheduler调用一个Job，就会将JobExecutionContext传递给Job的execute()方法；
+	(2)、Job能通过JobExecutionContext对象访问到Quartz运行时候的环境以及Job本身的明细数据。
+	
+3、浅谈JobDataMap
+	(1)、在进行任务调用时，JobDataMap存储在JobExecutionContext中，便于获取；
+	(2)、JobDataMap可以用来装载任何可序列化的数据对象，当job实例对象被执行时，这些参数对象会传递给它；
+	(3)、JobDataMap实现了JDK的Map接口，并且添加了一些非常方便的方法用来存取基本数据类型。
+	
+	获取JobDataMap的两种方式：
+		i、从Map中直接获取
+		ii、在Job实现类中添加setter方法对应的JobDataMap的键值(Quartz框架默认的JobFactory实现类在初始化job实例对象时会自动调用这些setter方法)
+		
+4、浅谈Trigger
+	Quartz中的触发器用来告诉调度程序作业什么时候触发，即Trigger对象是用来触发执行Job的。
+	
+	通用属性：
+		JobKey:表示Job实例的标识，触发器被触发时，该指定的Job实例会执行。
+		StartTime:表示触发器的时间表首次被触发的时间。类型为java.util.Date
+		EndTime:指定触发器不再被触发的时间。类型为java.util.Date
+		其中startTime和endTime的优先级大于repeatCount，
+			即如果执行到达指定结束时间，repeatCount还未到指定的count的话，仍然会结束任务;
+			如果执行次数结束，时间还未到结束时间，任务也就结束了。
+	
+	注意点：
+		i、重复次数可以为0，正整数或者是SimpleTrigger.REPEAT_INDEFINITELY(即为-1)，非负整数N表示执行的次数为N+1次
+		ii、重复执行间隔必须为0或者长整数
+		iii、一旦被指定了endTime参数，那么它可能会覆盖重复次数参数的效果，即结束时间比最后一次执行任务的时间点早，则次数参数就不起作用。
+		
+5、CronTrigger
+	基于日历的作业调度器，而不是像SimpleTrigger那样精确指定间隔时间，所以CronTrigger比SimpleTrigger更常用。
+	
+	cron表达式：用于配置CronTrigger实例，是由7个子表达式组成的字符串，描述了时间表的详细信息，
+		格式为：[秒] [分] [小时] [日] [月] [周] [年]
+		
+		字段				是否必填				允许值					允许的特殊字符
+		秒				是					0~59					, - * /
+		分				是					0~59					, - * /
+		小时				是					0~23					, - * /
+		日				是					1~31					, - * ? / L W C
+		月				是					1~12 或 JAN-DEC			, - * /
+		周				是					1~7 或 SUN-SAT			, - * ? / L C #
+		年				否					空值 或 1970~2099			, - * /
+		
+		L: last的意思，即最后一个
+		W: weekday的意思(周一至周五)，即离指定日期最近的工作日。
+			例如15W，则表示每月离15日最近的那个工作日触发一次。如果15日为周六，则最近的工作日就是14日触发；如果15日为周日，则最近的工作日就是16日触发；如果15日刚好是工作日，则在15日当天触发。
+		#: 序号
+		L和W可组合使用
+		周和月的英文字母不区分大小写
+		注意：日和周中必须有一个为?
+		
+6、浅谈Scheduler
+	Scheduler工厂模式
+	创建方式：
+		SchedulerFactory schedulerFactory = new StdSchedulerFactory();
+		Scheduler scheduler = schedulerFactory.getScheduler();
+		
+		DirectSchedulerFactory schedulerFactory = DirectSchedulerFactory.getInstance();
+		Scheduler scheduler = schedulerFactory.getScheduler();
+		
+	StdSchedulerFactory：
+		使用一组参数(java.util.Properties)来创建和初始化Quartz调度器
+		配置参数一般存储在quartz.properties
+		调用getScheduler()方法就能创建和初始化调度器对象
+		
+		主要函数：
+			Date scheduleJob(JobDetail jobDetail, Trigger trigger);
+			
+			void start();
+			
+			void standby();挂起，可以再次调用start()启动任务
+			
+			void shutdown(boolean flag);
+				flag=false:完全关闭scheduler
+				flag=true:等待所有正在执行的job执行完毕之后，再关闭scheduler
+				
+7、quartz.properties
+	如果项目的classpath中没有quartz.properties，则默认加载quartz-xxx.jar包下的org.quartz包下的quartz.properties
+	
+	组成部分：
+		调度器属性：
+			org.quartz.scheduler.instanceName属性用来区分特定的调度器实例，可以按照功能用途来给调度器起名
+			org.quartz.scheduler.instanceId属性和前者一样，也允许任何字符串，但这个值必须是在所有调度器实例中是唯一的，尤其是在一个集群中，作为集群的唯一key。如果想让Quartz自动生成这个值，可以设置为AUTO
+			
+		线程池属性：
+			org.quartz.threadPool.threadCount(必须)
+			org.quartz.threadPool.threadPriority(必须)
+			org.quartz.threadPool.class(必须)
+			
+		作业存储设置：
+		
+		插件配置：
